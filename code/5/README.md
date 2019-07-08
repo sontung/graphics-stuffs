@@ -10,6 +10,7 @@ This is the final project for the course "Practical Visual Computing" at Univers
  ## Manual
  The program has two modes: rasterization and ray casting. The table below
  summarizes all buttons of the UI. 
+ 
   | Buttons | Effect | 
   | ------------- |:-------------:| 
   | Mode | switch between two modes | 
@@ -30,22 +31,8 @@ This is the final project for the course "Practical Visual Computing" at Univers
   
   Note * : only in raycasting mode
   ## Implementation
-  
-  ```mermaid
-graph LR
-A[Activate] --> B[modeChanged && datasetChanged] 
-A --> C[generate_possible_cam_pos]
-A --> D[createSphere]
-A --> E[loadSkybox]
-B --> F[load_grid3d2iso]
-B --> G[read_sph_data]
-G --> H[extract_isosurface]
-H --> I[Render]
-F --> I[Render]
-D --> I[Render]
-E --> I[Render]
-J[UI changes] --> B
-```
+ ![Flowchart](https://raw.githubusercontent.com/sontung/graphics-stuffs/master/vis/diag.png)
+
 
 | Function | Effect |
 |--|--|
