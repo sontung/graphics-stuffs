@@ -1,0 +1,288 @@
+#version 440
+
+layout(quads, equal_spacing, ccw) in;
+
+layout( std430, binding = 0 ) buffer NodeVecU {
+	readonly float nVecU[]; 
+};
+
+layout( std430, binding = 1 ) buffer NodeVecV {
+	readonly float nVecV[]; 
+};
+
+layout( std430, binding = 2 ) buffer NodeC {
+	readonly float control_points[]; 
+};
+
+uniform mat4 modelMX;
+uniform mat4 viewMX;
+uniform mat4 projMX;
+uniform int u_size; // size of knot vec u
+uniform int v_size; // size of knot vec v
+uniform int p; // degree u
+uniform int q; // degree v
+uniform int nb_cp_m;
+uniform int nb_cp_n;
+uniform int depth_test;
+uniform int render_surface;
+
+
+in ivec2 patch_id2[];
+flat out ivec2 patch_id3;
+out vec3 normal_vec;
+out vec3 tex_coord;
+
+
+vec4 basis_function_u(int i, float u) {
+	float left[5];
+	float right[5];
+	float saved;
+	float temp;
+	vec4 N;
+
+	N[0] = 1.0;
+
+	for (int j = 1; j <= p; j++) {
+		left[j] = u - nVecU[i + 1 - j];
+		right[j] = nVecU[i + j] - u;
+		saved = 0.0;
+		for (int r = 0; r < j; r++) {
+			temp = N[r] / (right[r + 1] + left[j - r]);
+			N[r] = saved + right[r + 1] * temp;
+			saved = left[j - r] * temp;
+		}
+		N[j] = saved;
+	}
+	return N;
+}
+
+
+vec4 basis_function_v(int i, float u) {
+	float left[5];
+	float right[5];
+	float saved;
+	float temp;
+	vec4 N;
+
+	N[0] = 1.0;
+
+	for (int j = 1; j <= p; j++) {
+		left[j] = u - nVecV[i + 1 - j];
+		right[j] = nVecV[i + j] - u;
+		saved = 0.0;
+		for (int r = 0; r < j; r++) {
+			temp = N[r] / (right[r + 1] + left[j - r]);
+			N[r] = saved + right[r + 1] * temp;
+			saved = left[j - r] * temp;
+		}
+		N[j] = saved;
+	}
+	return N;
+}
+
+vec4 interpolate(in vec4 v0, in vec4 v1, in vec4 v2, in vec4 v3) {
+	vec4 a = mix(v0, v1, gl_TessCoord.x);
+	vec4 b = mix(v3, v2, gl_TessCoord.x);
+	return mix(a, b, gl_TessCoord.y);
+}
+
+int find_span_u(float u) {
+	int n = u_size - p;
+	if (u == nVecU[n + 1]) return n;
+	int low = p;
+	int high = n + 1;
+	int mid = (low + high) / 2;
+	while (u < nVecU[mid] || u >= nVecU[mid + 1]) {
+		if (u < nVecU[mid]) high = mid;
+		else low = mid;
+		mid = (low + high) / 2;
+	}
+	return mid;
+}
+
+int find_span_v(float u) {
+	int n = v_size - p;
+	if (u == nVecV[n + 1]) return n;
+	int low = p;
+	int high = n + 1;
+	int mid = (low + high) / 2;
+	while (u < nVecV[mid] || u >= nVecV[mid + 1]) {
+		if (u < nVecV[mid]) high = mid;
+		else low = mid;
+		mid = (low + high) / 2;
+	}
+	return mid;
+}
+
+int find_span(float u, int axis) {
+	int res;
+	int i;
+	if (axis == 0) for (i = p; i < u_size-2; i++) if (u >= nVecU[i] && u < nVecU[i+1]) break;
+	if (axis == 1) for (i = p; i < v_size-2; i++) if (u >= nVecV[i] && u < nVecV[i+1]) break;
+	res = i;
+	return res;
+}
+
+float[2][4] ders_basis_func(int i, float u, int which) {
+
+
+	float[2][4] ders;
+	int p = 3;
+	int n = 1;
+	float[4][4] ndu;
+	float[2][4] a;
+	float[4] left;
+	float[4] right;
+	float saved;
+	float temp;
+	int s1, s2, rk, pk, j1, j2, j, r, k;
+	float d;
+
+	ndu[0][0] = 1.0;
+	for (j = 1; j <= p; j++) {
+		if (which == 0) {
+			left[j] = u - nVecU[i+1-j];
+			right[j] = nVecU[i+j] - u;
+		} else {
+			left[j] = u - nVecV[i+1-j];
+			right[j] = nVecV[i+j] - u;
+		}
+
+		saved = 0.0f;
+		for (r = 0; r < j; r++) {
+			ndu[j][r] = right[r+1] + left[j-r];
+			temp = ndu[r][j-1] / ndu[j][r];
+			ndu[r][j] = saved + right[r+1]*temp;
+			saved = left[j-r]*temp;
+		}
+		ndu[j][j] = saved;
+	}
+
+	for (j = 0; j <= p; j++) ders[0][j] = ndu[j][p];
+
+	for (r = 0; r <= p; r++) {
+		s1 = 0;
+		s2 = 1;
+		a[0][0] = 1.0;
+		for (k = 1; k <= n; k++) {
+			d = 0.0;
+			rk = r - k;
+			pk = p - k;
+			if (r >= k) {
+				a[s2][0] = a[s1][0] / ndu[pk+1][rk];
+				d = a[s2][0] * ndu[rk][pk];
+			}
+
+			if (rk >= -1) j1 = 1;
+			else j1 = -rk;
+
+			if (r - 1 <= pk) j2 = k - 1;
+			else j2 = p - r;
+
+			for (j = j1; j <= j2; j++) {
+				a[s2][j] = (a[s1][j] - a[s1][j-1]) / ndu[pk+1][rk+j];
+				d += a[s2][j] * ndu[rk+j][pk];
+			}
+
+			if (r <= pk) {
+				a[s2][k] = -a[s1][k-1] / ndu[pk+1][r];
+				d += a[s2][k] * ndu[r][pk];
+			}
+			ders[k][r] = d;
+			j = s1;
+			s1 = s2;
+			s2 = j;
+		}
+	}
+
+	r = p;
+	for (k = 1; k <= n; k++) {
+		for (j = 0; j <= p; j++) ders[k][j] *= r;
+		r *= (p-k);
+	}
+
+	return ders;
+}
+
+float[6][6] surface_der(float u, float v, int id) {
+	int p = 3;
+	int q = 3;
+	int n = u_size - p;
+	int m = v_size - p;
+	int du = 1;
+	int dv = 1;
+	int d = 1;
+	float[6][6] SKL;
+	float[4] temp;
+	int k, l, s, r, dd;
+
+	for (k=p+1; k<=d; k++) for (l=0; l<=d-k; l++) SKL[k][l] = 0.0;
+	for (l=q+1; l<=d; l++) for (k=0; k<=d-l; k++) SKL[k][l] = 0.0;
+
+	int uspan = find_span(u, 0);
+	float[2][4] Nu = ders_basis_func(uspan, u, 0);
+	int vspan = find_span(v, 1);
+	float[2][4] Nv = ders_basis_func(vspan, v, 1);
+
+	for (k = 0; k <= du; k++) {
+		for (s = 0; s <= q; s++) {
+			temp[s] = 0.0;
+			for (r = 0; r <= p; r++) {
+				temp[s] += Nu[k][r]*control_points[3*((uspan-p+r)*nb_cp_m + vspan-q+s)+id];
+			}
+			dd = min(d-k, dv);
+			for (l = 0; l <= dd; l++) {
+				SKL[k][l] = 0.0;
+				for (s = 0; s <= q; s++) SKL[k][l] += Nv[l][s]*temp[s];
+			}
+		}
+	}
+
+
+
+	return SKL;
+}
+ 
+void main() { 
+	
+	vec4 domain = interpolate(gl_in[0].gl_Position, gl_in[1].gl_Position, gl_in[2].gl_Position, gl_in[3].gl_Position);
+
+	patch_id3 = patch_id2[1];
+
+	float u = gl_TessCoord.x;
+	float v = gl_TessCoord.y;
+
+	float[6][6] S_d1 = surface_der(u, v, 0);
+	float[6][6] S_d2 = surface_der(u, v, 1);
+	float[6][6] S_d3 = surface_der(u, v, 2);
+	vec3 du = vec3(S_d1[0][1], S_d2[0][1], S_d3[0][1]);
+	vec3 dv = vec3(S_d1[1][0], S_d2[1][0], S_d3[1][0]);
+	normal_vec = normalize(cross(du, dv));
+
+
+	int u_span = find_span(u, 0);
+	vec4 Nu = basis_function_u(u_span, u);
+	int v_span = find_span(v, 1);
+	vec4 Nv = basis_function_v(v_span, v);
+
+	int uind = u_span - p;
+	int vind;
+	vec3 S = vec3(0.0f);
+	float temp;
+
+	for (int id = 0; id < 3; id++) {
+		for (int l = 0; l <= q; l++) {
+			temp = 0.0f;
+			vind = v_span - q + l;
+			for (int k = 0; k <= p; k++) temp += Nu[k] * control_points[3*((uind+k)*nb_cp_m + vind)+id];
+			S[id] += Nv[l] * temp;
+		}
+	}
+	if (depth_test == 1) S[2] -= 0.5; // offset for z for visualizing
+	else S[2] = 0.0;
+
+	tex_coord = gl_TessCoord;
+
+	if (render_surface == 1) gl_Position = projMX * viewMX * modelMX * vec4(S, 1);
+	else gl_Position = projMX * viewMX * modelMX * vec4(domain.xyz-0.5, 1);
+}

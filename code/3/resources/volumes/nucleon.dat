@@ -1,0 +1,4 @@
+ObjectFileName: 	nucleon.raw
+Resolution: 		41 41 41
+SliceThickness:		1.0 1.0 1.0
+Format: 		UCHAR

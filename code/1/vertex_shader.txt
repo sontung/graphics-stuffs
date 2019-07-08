@@ -1,0 +1,8 @@
+#version 330
+layout(location = 0) in vec4 in_position;
+uniform mat4 model_mat; 
+out vec4 tex; 
+void main() { 
+    gl_Position = model_mat*in_position; 
+    tex = (gl_Position+vec4(1.0))/vec4(2.0); 
+}

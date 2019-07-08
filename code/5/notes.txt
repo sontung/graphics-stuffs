@@ -1,0 +1,2 @@
+cam pos = inv(view_mat) * (0 0 0 1)
+target vec = inv(view_mat) * (0 0 1 1)

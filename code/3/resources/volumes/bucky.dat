@@ -1,0 +1,4 @@
+ObjectFileName: 	Bucky.raw
+Resolution: 		32 32 32
+SliceThickness:		0.5 1.0 1.0
+Format: 		UCHAR
